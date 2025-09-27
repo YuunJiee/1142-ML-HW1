@@ -42,7 +42,7 @@ def filter_and_analyze_data(df):
 
     # TODO 4.2: 找出總分最高的學生
     max_total = df['總分'].max()
-    top_student = df.nlargest(1, '總分')[['姓名', '總分']]
+    top_student = df[df['總分']==max_total][['姓名', '總分']]
     # 回傳 dict，方便 pytest 檢查每個任務
     return {
         "processed_df": df,
