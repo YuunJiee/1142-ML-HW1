@@ -40,6 +40,11 @@ jobs:
           NEW_FILES=$(grep "^submit/" changed_files.txt || true)
           MAIN_FILES=$(echo "$NEW_FILES" | grep -E '^submit/HW1_[0-9]{9}\.py$' || true)
           MAIN_COUNT=$(echo "$MAIN_FILES" | grep -c '\.' || true)
+          # submit/ 內只允許 HW1_<學號>.py 與 HW1_<學號>.ipynb
+          INVALID_FILES=$(echo "$NEW_FILES" | grep -vE '^submit/(HW1_[0-9]{9}\.(py|ipynb)|\.gitkeep)$' || true)
+          if [[ -n "$INVALID_FILES" ]]; then
+            ERROR_MSG+="❌ submit/ 內只允許 HW1_<學號>.py 或 HW1_<學號>.ipynb\n"
+          fi
 
           if [[ $MAIN_COUNT -ne 1 ]]; then
             ERROR_MSG+="❌ 你必須新增且僅有一個主程式檔 (submit/HW1_<學號>.py)\n"
