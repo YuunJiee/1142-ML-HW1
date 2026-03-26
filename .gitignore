@@ -1,5 +1,6 @@
 solution.py
 tests/test_HW1.py
+grading_test_b64.txt
 
 __pycache__/
 *.pyc
