@@ -11,7 +11,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
@@ -32,17 +32,17 @@ jobs:
             if [[ "$file" == "README.md" ]]; then
               ERROR_MSG+="❌ 不可修改 README.md\n"
             fi
-            if [[ "$file" == "template.py" ]]; then
-              ERROR_MSG+="❌ 不可修改 template.py\n"
+            if [[ "$file" == "template.ipynb" ]]; then
+              ERROR_MSG+="❌ 不可修改 template.ipynb\n"
             fi
           done < changed_files.txt
 
           NEW_FILES=$(grep "^submit/" changed_files.txt || true)
-          MAIN_FILES=$(echo "$NEW_FILES" | grep -E '^submit/W4_[0-9]{9}\.py$' || true)
-          MAIN_COUNT=$(echo "$MAIN_FILES" | grep -c ".*" || true)
+          MAIN_FILES=$(echo "$NEW_FILES" | grep -E '^submit/HW1_[0-9]{9}\.py$' || true)
+          MAIN_COUNT=$(echo "$MAIN_FILES" | grep -c '\.' || true)
 
           if [[ $MAIN_COUNT -ne 1 ]]; then
-            ERROR_MSG+="❌ 你必須新增且僅有一個主程式檔 (submit/W4_<學號>.py)\n"
+            ERROR_MSG+="❌ 你必須新增且僅有一個主程式檔 (submit/HW1_<學號>.py)\n"
           fi
 
           if [[ -n "$ERROR_MSG" ]]; then
@@ -62,10 +62,10 @@ jobs:
           issue-number: ${{ github.event.pull_request.number }}
           body-file: pr_feedback.md
 
-      - name: Checkout PR head
-        uses: actions/checkout@v3
+      - name: Checkout PR head (for submit/ only)
+        uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.event.pull_request.head.sha }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
 
       - name: Upload student submission
@@ -73,7 +73,7 @@ jobs:
         with:
           name: student-submission
           path: submit/
-  
+
   pytest_check:
     needs: validate_submission
     runs-on: ubuntu-latest
@@ -83,9 +83,8 @@ jobs:
     outputs:
       pytest_score: ${{ steps.score.outputs.pytest_score }}
     steps:
-      - uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
+      # 拿 base repo（老師的 main branch），確保 tests/ 無法被學生竄改
+      - uses: actions/checkout@v4
 
       - name: Download student submission
         uses: actions/download-artifact@v4
@@ -93,7 +92,20 @@ jobs:
           name: student-submission
           path: submit/
 
-      - uses: actions/setup-python@v4
+      # 測試檔案不放在 repo，從 GRADING_TEST_B64 secret 注入
+      - name: Inject real grading test
+        env:
+          GRADING_TEST_B64: ${{ secrets.GRADING_TEST_B64 }}
+        run: |
+          mkdir -p tests
+          if [ -z "$GRADING_TEST_B64" ]; then
+            echo "❌ 未設定 GRADING_TEST_B64 secret，無法進行評分" >&2
+            exit 1
+          fi
+          echo "$GRADING_TEST_B64" | base64 -d > tests/test_HW1.py
+          echo "✅ 已注入真實評分測資"
+
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
@@ -102,7 +114,11 @@ jobs:
       - name: Run pytest and save results
         run: |
           mkdir -p test_results
-          pytest tests/test_W4.py --disable-warnings -q --tb=short
+          pytest tests/test_HW1.py --disable-warnings -q --tb=short || true
+          # 若 pytest 意外中止導致 results.md 未產生，補一個預設檔避免後續步驟失敗
+          if [ ! -f test_results/results.md ]; then
+            printf "### 學生作業自動測試結果\n正確性總分: 0\n\n❌ 測試執行發生嚴重錯誤，請確認提交的程式是否有語法錯誤\n" > test_results/results.md
+          fi
 
       - name: Post pytest results
         uses: peter-evans/create-or-update-comment@v4
@@ -114,13 +130,13 @@ jobs:
   ai_review:
     needs: validate_submission
     runs-on: ubuntu-latest
-    if: success()
+    if: needs.validate_submission.result == 'success'
     permissions:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: pip install google-generativeai
